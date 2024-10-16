@@ -32,6 +32,7 @@
 #endif
 
 #define TLMI_ADMIN "/sys/class/firmware-attributes/thinklmi/authentication/Admin"
+#define TLMI_SYSTEM "/sys/class/firmware-attributes/thinklmi/authentication/System"
 #define TLMI_ATTR "/sys/class/firmware-attributes/thinklmi/attributes"
 
 #define WMI_UPDATE_CERT "Lenovo_UpdateBiosCertificate"
@@ -54,13 +55,32 @@ static void usage(void)
 	fprintf(stderr, "  unlock -f request.txt -k privkey.pem           - Generate unlock code from request file.\n");
 	fprintf(stderr, "  unlock -r request-string -k privkey.pem        - Generate unlock code from request string.\n");
 
+	fprintf(stderr, "* -u option specifes the user - \"admin\" or \"system\". Admin user is default.\n");
 	fprintf(stderr, "* -d option can be used instead of -c for DER formatted certificates.\n");
 	fprintf(stderr, "* -o option specifies output filename.\n");
-	fprintf(stderr, "* -u option can be used to specify password for the private key.\n");
+	fprintf(stderr, "* -z option specifies private key password if required.\n");
 	fprintf(stderr, "* -q option will inhibit all informative messages\n");
 	fprintf(stderr, "* -h displays this message\n");
 	//fprintf(stderr, "* -D option will print extra debug information\n");
 	fprintf(stderr, "Lenovo ThinkLMI Authenticator Utility version %s (built %s)\n", TLMI_PROG_VER, __DATE__);
+}
+
+static char * determine_user_file(char *user)
+{
+	if (!user)
+		return TLMI_ADMIN;
+	if (!strncmp(user, "system", 6) || !strncmp(user, "System", 6) || !strncmp(user, "SYSTEM", 6))
+		return TLMI_SYSTEM;
+	return TLMI_ADMIN;
+}
+
+static char * determine_user_type(char *user)
+{
+	if (!user)
+		return NULL;
+	if (!strncmp(user, "system", 6) || !strncmp(user, "System", 6) || !strncmp(user, "SYSTEM", 6))
+		return "SMC";
+	return "SVC";
 }
 
 int main(int argc, char* argv[])
@@ -75,6 +95,7 @@ int main(int argc, char* argv[])
 	char *reqfile = NULL;
 	char *reqstr = NULL;
 	char *outfile= NULL;
+	char *user=NULL;
 	int c;
 	int ret = 0;
 	FILE *fp;
@@ -113,6 +134,9 @@ int main(int argc, char* argv[])
 			case 'a':
 				attribute = optarg;
 				break;
+			case 'u':
+				user = optarg;
+				break;
 			case 'v':
 				value = optarg;
 				break;
@@ -122,7 +146,7 @@ int main(int argc, char* argv[])
 			case 'r':
 				reqstr = optarg;
 				break;
-			case 'u':
+			case 'z':
 				set_key_passwd(optarg);
 				break;
 			case 'o':
@@ -175,8 +199,8 @@ int main(int argc, char* argv[])
 		if (ret)
 			return ret;
 
-		fprintf(fp, "echo %s > %s/current_password\n", password, TLMI_ADMIN);
-		fprintf(fp, "echo %s > %s/certificate\n", base64cert, TLMI_ADMIN);
+		fprintf(fp, "echo \"%s\" > %s/current_password\n", password, determine_user_file(user));
+		fprintf(fp, "echo %s > %s/certificate\n", base64cert, determine_user_file(user));
 		fclose(fp);
 		free(base64cert);
 	}
@@ -192,12 +216,15 @@ int main(int argc, char* argv[])
 		if (ret)
 			return ret;
 
-		wmistr = (char *)malloc(strlen(WMI_UPDATE_CERT) + 1 + certLen + 1);
+		wmistr = (char *)malloc(4 + strlen(WMI_UPDATE_CERT) + 1 + certLen + 1);
 		if (!wmistr) {
 			free(base64cert);
 			return -1;
 		}
-		ret = sprintf(wmistr, "%s,%s", WMI_UPDATE_CERT, base64cert);
+		if (user)
+			ret = sprintf(wmistr, "%s,%s,%s", WMI_UPDATE_CERT, determine_user_type(user), base64cert);
+		else
+			ret = sprintf(wmistr, "%s,%s", WMI_UPDATE_CERT, base64cert);
 		if (ret < 0) {
 			free(wmistr);
 			free(base64cert);
@@ -210,8 +237,8 @@ int main(int argc, char* argv[])
 			free(base64cert);
 			return ret;
 		}
-		fprintf(fp, "echo %s > %s/signature\n", base64sig, TLMI_ADMIN);
-		fprintf(fp, "echo %s > %s/certificate\n", base64cert, TLMI_ADMIN);
+		fprintf(fp, "echo %s > %s/signature\n", base64sig, determine_user_file(user));
+		fprintf(fp, "echo %s > %s/certificate\n", base64cert, determine_user_file(user));
 		fclose(fp);
 		free(base64cert);
 		free(base64sig);
@@ -221,11 +248,14 @@ int main(int argc, char* argv[])
 			usage();
 			exit(1);
 		}
-		wmistr = (char *)malloc(strlen(WMI_CLEAR_CERT) + 1 + strlen(sysserial) + 1);
+		wmistr = (char *)malloc(4 + strlen(WMI_CLEAR_CERT) + 1 + strlen(sysserial) + 1);
 		if (!wmistr)
 			return -1;
 
-		ret = sprintf(wmistr, "%s,%s", WMI_CLEAR_CERT, sysserial);
+		if (user)
+			ret = sprintf(wmistr, "%s,%s,%s", WMI_CLEAR_CERT, determine_user_type(user), sysserial);
+		else
+			ret = sprintf(wmistr, "%s,%s", WMI_CLEAR_CERT, sysserial);
 		if (ret < 0) {
 			free(wmistr);
 			return ret;
@@ -235,8 +265,8 @@ int main(int argc, char* argv[])
 		if (ret)
 			return ret;
 
-		fprintf(fp, "echo %s > %s/signature\n", base64sig, TLMI_ADMIN);
-		fprintf(fp, "echo '' > %s/certificate\n", TLMI_ADMIN);
+		fprintf(fp, "echo %s > %s/signature\n", base64sig, determine_user_file(user));
+		fprintf(fp, "echo '' > %s/certificate\n", determine_user_file(user));
 		fclose(fp);
 		free(base64sig);
 	}
@@ -248,7 +278,7 @@ int main(int argc, char* argv[])
 		ret = wmi_sign(key, WMI_SAVE_ATTR, &base64sig, &certLen);
 		if (ret)
 			return ret;
-		fprintf(fp, "echo %s > %s/save_signature\n", base64sig, TLMI_ADMIN);
+		fprintf(fp, "echo %s > %s/save_signature\n", base64sig, determine_user_file(user));
 		free(base64sig);
 
 		wmistr = (char *)malloc(strlen(WMI_SET_ATTR) + 1 + strlen(attribute) + 1 + strlen(value) + 1);
@@ -265,7 +295,7 @@ int main(int argc, char* argv[])
 		if (ret)
 			return ret;
 
-		fprintf(fp, "echo %s > %s/signature\n", base64sig, TLMI_ADMIN);
+		fprintf(fp, "echo %s > %s/signature\n", base64sig, determine_user_file(user));
 		fprintf(fp, "echo %s > %s/%s/current_value\n", value, TLMI_ATTR, attribute);
 		fclose(fp);
 		free(base64sig);
@@ -275,11 +305,14 @@ int main(int argc, char* argv[])
 			usage();
 			exit(1);
 		}
-		wmistr = (char *)malloc(strlen(WMI_CERT2PASS) + 1 + strlen(password) + 1);
+		wmistr = (char *)malloc(4 + strlen(WMI_CERT2PASS) + 1 + strlen(password) + 1);
 		if (!wmistr)
 			return -1;
 
-		ret = sprintf(wmistr, "%s,%s", WMI_CERT2PASS, password);
+		if (user)
+			ret = sprintf(wmistr, "%s,%s,%s", WMI_CERT2PASS, determine_user_type(user), password);
+		else
+			ret = sprintf(wmistr, "%s,%s", WMI_CERT2PASS, password);
 		if (ret < 0) {
 			free(wmistr);
 			return ret;
@@ -289,8 +322,8 @@ int main(int argc, char* argv[])
 		if (ret)
 			return ret;
 
-		fprintf(fp, "echo %s > %s/signature\n", base64sig, TLMI_ADMIN);
-		fprintf(fp, "echo %s > %s/cert_to_password\n", password, TLMI_ADMIN);
+		fprintf(fp, "echo %s > %s/signature\n", base64sig, determine_user_file(user));
+		fprintf(fp, "echo \"%s\" > %s/cert_to_password\n", password, determine_user_file(user));
 		fclose(fp);
 		free(base64sig);
 	}
