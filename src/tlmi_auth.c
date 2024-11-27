@@ -25,6 +25,7 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include "tlmi_crypto.h"
 
 #ifndef TLMI_PROG_VER
@@ -40,6 +41,9 @@
 #define WMI_SET_ATTR    "Lenovo_SetBiosSettingEx"
 #define WMI_SAVE_ATTR   "Lenovo_SaveBiosSettingsEx"
 #define WMI_CERT2PASS   "Lenovo_ChangeBiosCertificateToPassword"
+
+#define WMI_ADMIN_USER  "SVC" /* AKA SuperVisor */
+#define WMI_SYSTEM_USER "SMC"
 
 static char *default_outfile = "thinklmi.sh";
 
@@ -69,7 +73,7 @@ static char * determine_user_file(char *user)
 {
 	if (!user)
 		return TLMI_ADMIN;
-	if (!strncmp(user, "system", 6) || !strncmp(user, "System", 6) || !strncmp(user, "SYSTEM", 6))
+	if (!strcasecmp(user, "system"))
 		return TLMI_SYSTEM;
 	return TLMI_ADMIN;
 }
@@ -78,9 +82,9 @@ static char * determine_user_type(char *user)
 {
 	if (!user)
 		return NULL;
-	if (!strncmp(user, "system", 6) || !strncmp(user, "System", 6) || !strncmp(user, "SYSTEM", 6))
-		return "SMC";
-	return "SVC";
+	if (!strcasecmp(user, "system"))
+		return WMI_SYSTEM_USER;
+	return WMI_ADMIN_USER;
 }
 
 int main(int argc, char* argv[])
@@ -216,7 +220,7 @@ int main(int argc, char* argv[])
 		if (ret)
 			return ret;
 
-		wmistr = (char *)malloc(4 + strlen(WMI_UPDATE_CERT) + 1 + certLen + 1);
+		wmistr = (char *)malloc(strlen(WMI_ADMIN_USER) + 1 + strlen(WMI_UPDATE_CERT) + 1 + certLen + 1);
 		if (!wmistr) {
 			free(base64cert);
 			return -1;
@@ -248,7 +252,7 @@ int main(int argc, char* argv[])
 			usage();
 			exit(1);
 		}
-		wmistr = (char *)malloc(4 + strlen(WMI_CLEAR_CERT) + 1 + strlen(sysserial) + 1);
+		wmistr = (char *)malloc(strlen(WMI_ADMIN_USER) + 1 + strlen(WMI_CLEAR_CERT) + 1 + strlen(sysserial) + 1);
 		if (!wmistr)
 			return -1;
 
@@ -305,7 +309,7 @@ int main(int argc, char* argv[])
 			usage();
 			exit(1);
 		}
-		wmistr = (char *)malloc(4 + strlen(WMI_CERT2PASS) + 1 + strlen(password) + 1);
+		wmistr = (char *)malloc(strlen(WMI_ADMIN_USER) + 1 + strlen(WMI_CERT2PASS) + 1 + strlen(password) + 1);
 		if (!wmistr)
 			return -1;
 
